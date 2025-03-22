@@ -1,13 +1,24 @@
 'use client';
 
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
+
+export enum AuthType {
+  BASIC = 'basic',
+  TOKEN = 'token',
+  SSO = 'sso',
+  BASIC_AUTH = 'basic_auth'
+}
 
 export interface JenkinsConnection {
   id: string;
   name: string;
   url: string;
-  username: string;
-  token: string;
+  authType: AuthType;
+  username?: string;
+  token?: string;
+  password?: string;
+  ssoToken?: string;
+  cookieAuth?: boolean;
 }
 
 export interface JenkinsJob {
@@ -66,17 +77,64 @@ class JenkinsApiClient {
   constructor(connection: JenkinsConnection) {
     this.connection = connection;
     
-    // Create axios instance with base URL and auth
-    this.axios = axios.create({
+    // Create axios config based on authentication type
+    const config: AxiosRequestConfig = {
       baseURL: connection.url,
-      auth: {
-        username: connection.username,
-        password: connection.token
-      },
       headers: {
         'Content-Type': 'application/json',
       }
-    });
+    };
+
+    // Configure authentication based on the selected type
+    switch (connection.authType) {
+      case AuthType.BASIC:
+        // Basic authentication with username and token
+        if (connection.username && connection.token) {
+          config.auth = {
+            username: connection.username,
+            password: connection.token
+          };
+        }
+        break;
+      
+      case AuthType.TOKEN:
+        // API token authentication
+        if (connection.token) {
+          config.headers = {
+            ...config.headers,
+            'Authorization': `Bearer ${connection.token}`
+          };
+        }
+        break;
+      
+      case AuthType.SSO:
+        // SSO token authentication
+        if (connection.ssoToken) {
+          config.headers = {
+            ...config.headers,
+            'Authorization': `Bearer ${connection.ssoToken}`
+          };
+        }
+        
+        // Enable withCredentials for SSO cookie-based auth if needed
+        if (connection.cookieAuth) {
+          config.withCredentials = true;
+        }
+        break;
+      
+      case AuthType.BASIC_AUTH:
+        // Basic authentication with username and password
+        if (connection.username && connection.password) {
+          config.auth = {
+            username: connection.username,
+            password: connection.password
+          };
+        }
+        break;
+    }
+    
+    // Create axios instance with the configured options
+    this.axios = axios.create(config);
   }
 
   // Test connection to Jenkins

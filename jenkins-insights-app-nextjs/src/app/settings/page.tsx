@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Card, Form, Button, Alert, Table, Badge } from 'react-bootstrap';
-import { useJenkins } from '@/lib/jenkins-context';
+import { useJenkins, AuthType } from '@/lib/jenkins-context';
 import Layout from '@/components/Layout';
 
 export default function Settings() {
@@ -20,8 +20,12 @@ export default function Settings() {
   const [newConnection, setNewConnection] = useState({
     name: '',
     url: '',
+    authType: AuthType.BASIC,
     username: '',
     token: '',
+    password: '',
+    ssoToken: '',
+    cookieAuth: false
   });
   
   const [showSuccess, setShowSuccess] = useState(false);
@@ -29,10 +33,10 @@ export default function Settings() {
   const [testingConnection, setTestingConnection] = useState(false);
   
   const handleInputChange = (e) => {
-    const { name, value } = e.target;
+    const { name, value, type, checked } = e.target;
     setNewConnection({
       ...newConnection,
-      [name]: value
+      [name]: type === 'checkbox' ? checked : value
     });
   };
   
@@ -50,8 +54,12 @@ export default function Settings() {
     setNewConnection({
       name: '',
       url: '',
+      authType: AuthType.BASIC,
       username: '',
       token: '',
+      password: '',
+      ssoToken: '',
+      cookieAuth: false
     });
     
     setShowSuccess(true);
@@ -90,6 +98,40 @@ export default function Settings() {
     }
   };
 
+  // Helper function to check if form is valid based on auth type
+  const isFormValid = () => {
+    if (!newConnection.name || !newConnection.url) return false;
+    
+    switch (newConnection.authType) {
+      case AuthType.BASIC:
+        return !!newConnection.username && !!newConnection.token;
+      case AuthType.TOKEN:
+        return !!newConnection.token;
+      case AuthType.SSO:
+        return !!newConnection.ssoToken;
+      case AuthType.BASIC_AUTH:
+        return !!newConnection.username && !!newConnection.password;
+      default:
+        return false;
+    }
+  };
+
+  // Helper function to get auth type label
+  const getAuthTypeLabel = (authType) => {
+    switch (authType) {
+      case AuthType.BASIC:
+        return 'Basic (Username + API Token)';
+      case AuthType.TOKEN:
+        return 'API Token Only';
+      case AuthType.SSO:
+        return 'Single Sign-On (SSO)';
+      case AuthType.BASIC_AUTH:
+        return 'Basic Auth (Username + Password)';
+      default:
+        return authType;
+    }
+  };
+
   return (
     <Layout>
       <h2 className="mb-4">Settings</h2>
@@ -117,6 +159,7 @@ export default function Settings() {
                 <tr>
                   <th>Name</th>
                   <th>URL</th>
+                  <th>Auth Type</th>
                   <th>Username</th>
                   <th>Status</th>
                   <th>Actions</th>
@@ -128,7 +171,8 @@ export default function Settings() {
                     <tr key={conn.id} className={activeConnection?.id === conn.id ? 'table-active' : ''}>
                       <td>{conn.name}</td>
                       <td>{conn.url}</td>
-                      <td>{conn.username}</td>
+                      <td>{getAuthTypeLabel(conn.authType)}</td>
+                      <td>{conn.username || '-'}</td>
                       <td>
                         <Badge bg={activeConnection?.id === conn.id ? 'success' : 'secondary'}>
                           {activeConnection?.id === conn.id ? 'Active' : 'Inactive'}
@@ -142,6 +186,7 @@ export default function Settings() {
                             className="me-2"
                             onClick={() => handleSetActive(conn.id)}
                           >
+                            <i className="bi bi-check-circle me-1"></i>
                             Set Active
                           </Button>
                         )}
@@ -150,6 +195,7 @@ export default function Settings() {
                           size="sm"
                           onClick={() => handleRemoveConnection(conn.id)}
                         >
+                          <i className="bi bi-trash me-1"></i>
                           Remove
                         </Button>
                       </td>
@@ -157,7 +203,7 @@ export default function Settings() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={5} className="text-center">No connections configured</td>
+                    <td colSpan={6} className="text-center">No connections configured</td>
                   </tr>
                 )}
               </tbody>
@@ -196,31 +242,118 @@ export default function Settings() {
             </Form.Group>
             
             <Form.Group className="mb-3">
-              <Form.Label>Username</Form.Label>
-              <Form.Control 
-                type="text" 
-                name="username"
-                value={newConnection.username}
+              <Form.Label>Authentication Type</Form.Label>
+              <Form.Select 
+                name="authType"
+                value={newConnection.authType}
                 onChange={handleInputChange}
-                placeholder="admin" 
                 required
-              />
-            </Form.Group>
-            
-            <Form.Group className="mb-3">
-              <Form.Label>API Token</Form.Label>
-              <Form.Control 
-                type="password" 
-                name="token"
-                value={newConnection.token}
-                onChange={handleInputChange}
-                placeholder="Jenkins API Token" 
-                required
-              />
+              >
+                <option value={AuthType.BASIC}>Basic (Username + API Token)</option>
+                <option value={AuthType.TOKEN}>API Token Only</option>
+                <option value={AuthType.SSO}>Single Sign-On (SSO)</option>
+                <option value={AuthType.BASIC_AUTH}>Basic Auth (Username + Password)</option>
+              </Form.Select>
               <Form.Text className="text-muted">
-                You can generate an API token from your Jenkins user configuration page.
+                Select the authentication method used by your Jenkins instance.
               </Form.Text>
             </Form.Group>
+            
+            {/* Conditional fields based on auth type */}
+            {(newConnection.authType === AuthType.BASIC || newConnection.authType === AuthType.BASIC_AUTH) && (
+              <Form.Group className="mb-3">
+                <Form.Label>Username</Form.Label>
+                <Form.Control 
+                  type="text" 
+                  name="username"
+                  value={newConnection.username}
+                  onChange={handleInputChange}
+                  placeholder="admin" 
+                  required
+                />
+              </Form.Group>
+            )}
+            
+            {newConnection.authType === AuthType.BASIC && (
+              <Form.Group className="mb-3">
+                <Form.Label>API Token</Form.Label>
+                <Form.Control 
+                  type="password" 
+                  name="token"
+                  value={newConnection.token}
+                  onChange={handleInputChange}
+                  placeholder="Jenkins API Token" 
+                  required
+                />
+                <Form.Text className="text-muted">
+                  You can generate an API token from your Jenkins user configuration page.
+                </Form.Text>
+              </Form.Group>
+            )}
+            
+            {newConnection.authType === AuthType.TOKEN && (
+              <Form.Group className="mb-3">
+                <Form.Label>API Token</Form.Label>
+                <Form.Control 
+                  type="password" 
+                  name="token"
+                  value={newConnection.token}
+                  onChange={handleInputChange}
+                  placeholder="Jenkins API Token" 
+                  required
+                />
+                <Form.Text className="text-muted">
+                  You can generate an API token from your Jenkins user configuration page.
+                </Form.Text>
+              </Form.Group>
+            )}
+            
+            {newConnection.authType === AuthType.BASIC_AUTH && (
+              <Form.Group className="mb-3">
+                <Form.Label>Password</Form.Label>
+                <Form.Control 
+                  type="password" 
+                  name="password"
+                  value={newConnection.password}
+                  onChange={handleInputChange}
+                  placeholder="Jenkins Password" 
+                  required
+                />
+              </Form.Group>
+            )}
+            
+            {newConnection.authType === AuthType.SSO && (
+              <>
+                <Form.Group className="mb-3">
+                  <Form.Label>SSO Token</Form.Label>
+                  <Form.Control 
+                    type="password" 
+                    name="ssoToken"
+                    value={newConnection.ssoToken}
+                    onChange={handleInputChange}
+                    placeholder="SSO Token" 
+                    required
+                  />
+                  <Form.Text className="text-muted">
+                    The token provided by your SSO provider for Jenkins authentication.
+                  </Form.Text>
+                </Form.Group>
+                
+                <Form.Group className="mb-3">
+                  <Form.Check 
+                    type="checkbox"
+                    id="cookie-auth-switch"
+                    name="cookieAuth"
+                    checked={newConnection.cookieAuth}
+                    onChange={handleInputChange}
+                    label="Enable Cookie-based Authentication"
+                  />
+                  <Form.Text className="text-muted">
+                    Enable this if your SSO implementation uses cookies for authentication.
+                  </Form.Text>
+                </Form.Group>
+              </>
+            )}
             
             {testResult && (
               <Alert variant={testResult.success ? 'success' : 'danger'} className="mb-3">
@@ -233,16 +366,18 @@ export default function Settings() {
                 variant="outline-primary" 
                 type="button" 
                 onClick={handleTestConnection}
-                disabled={testingConnection || !newConnection.url || !newConnection.username || !newConnection.token}
+                disabled={testingConnection || !isFormValid()}
               >
+                <i className="bi bi-lightning-charge me-1"></i>
                 {testingConnection ? 'Testing...' : 'Test Connection'}
               </Button>
               
               <Button 
                 variant="primary" 
                 type="submit"
-                disabled={!newConnection.name || !newConnection.url || !newConnection.username || !newConnection.token}
+                disabled={!isFormValid()}
               >
+                <i className="bi bi-plus-circle me-1"></i>
                 Add Connection
               </Button>
             </div>
@@ -257,7 +392,7 @@ export default function Settings() {
           <Form>
             <Form.Group className="mb-3">
               <Form.Label>Theme</Form.Label>
-              <Form.Select defaultValue="light">
+              <Form.Select defaultValue="dark">
                 <option value="light">Light</option>
                 <option value="dark">Dark</option>
                 <option value="system">System Default</option>
@@ -285,6 +420,7 @@ export default function Settings() {
             </Form.Group>
             
             <Button variant="primary" type="submit">
+              <i className="bi bi-save me-1"></i>
               Save Preferences
             </Button>
           </Form>

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import JenkinsApiClient, { JenkinsConnection } from '@/lib/jenkins-api';
+import JenkinsApiClient, { JenkinsConnection, AuthType } from '@/lib/jenkins-api';
 
 interface JenkinsContextType {
   connections: JenkinsConnection[];
@@ -34,12 +34,25 @@ export const JenkinsProvider: React.FC<JenkinsProviderProps> = ({ children }) =>
     if (savedConnections) {
       try {
         const parsed = JSON.parse(savedConnections);
-        setConnections(parsed);
+        
+        // Handle migration from old format to new format with authType
+        const migratedConnections = parsed.map((conn: JenkinsConnection) => {
+          // If connection doesn't have authType, assume it's the old format with username/token
+          if (!conn.authType && conn.username && conn.token) {
+            return {
+              ...conn,
+              authType: AuthType.BASIC
+            };
+          }
+          return conn;
+        });
+        
+        setConnections(migratedConnections);
         
         // Set active connection if available
         const activeId = localStorage.getItem('jenkins-active-connection');
         if (activeId) {
-          const active = parsed.find((conn: JenkinsConnection) => conn.id === activeId);
+          const active = migratedConnections.find((conn: JenkinsConnection) => conn.id === activeId);
           if (active) {
             setActiveConnection(active);
             setClient(new JenkinsApiClient(active));
@@ -74,6 +87,30 @@ export const JenkinsProvider: React.FC<JenkinsProviderProps> = ({ children }) =>
       connection.id = Date.now().toString();
     }
     
+    // Ensure connection has authType
+    if (!connection.authType) {
+      // Default to BASIC if username and token are provided
+      if (connection.username && connection.token) {
+        connection.authType = AuthType.BASIC;
+      } 
+      // Default to TOKEN if only token is provided
+      else if (connection.token) {
+        connection.authType = AuthType.TOKEN;
+      }
+      // Default to SSO if ssoToken is provided
+      else if (connection.ssoToken) {
+        connection.authType = AuthType.SSO;
+      }
+      // Default to BASIC_AUTH if username and password are provided
+      else if (connection.username && connection.password) {
+        connection.authType = AuthType.BASIC_AUTH;
+      }
+      // Fallback to BASIC as default
+      else {
+        connection.authType = AuthType.BASIC;
+      }
+    }
+    
     setConnections(prev => [...prev, connection]);
     
     // If this is the first connection, set it as active
@@ -106,6 +143,30 @@ export const JenkinsProvider: React.FC<JenkinsProviderProps> = ({ children }) =>
   const testConnection = async (connection: JenkinsConnection): Promise<boolean> => {
     setIsLoading(true);
     setError(null);
+    
+    // Ensure connection has authType before testing
+    if (!connection.authType) {
+      // Default to BASIC if username and token are provided
+      if (connection.username && connection.token) {
+        connection.authType = AuthType.BASIC;
+      } 
+      // Default to TOKEN if only token is provided
+      else if (connection.token) {
+        connection.authType = AuthType.TOKEN;
+      }
+      // Default to SSO if ssoToken is provided
+      else if (connection.ssoToken) {
+        connection.authType = AuthType.SSO;
+      }
+      // Default to BASIC_AUTH if username and password are provided
+      else if (connection.username && connection.password) {
+        connection.authType = AuthType.BASIC_AUTH;
+      }
+      // Fallback to BASIC as default
+      else {
+        connection.authType = AuthType.BASIC;
+      }
+    }
     
     try {
       const testClient = new JenkinsApiClient(connection);
@@ -145,3 +206,5 @@ export const useJenkins = (): JenkinsContextType => {
   }
   return context;
 };
+
+export { AuthType };
